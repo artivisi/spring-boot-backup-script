@@ -1,0 +1,9 @@
+# Ansible vault files (encrypted secrets)
+**/vault.yml
+!**/vault.yml.example
+
+# Retry files
+*.retry
+
+# Local inventory overrides
+*.local.yml
