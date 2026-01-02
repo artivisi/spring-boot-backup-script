@@ -5,9 +5,7 @@
 
   tasks:
     - name: Execute backup script
-      command: "{{ app_base_path }}/scripts/backup.sh"
-      become: true
-      become_user: "{{ app_user }}"
+      command: "sudo -u {{ app_user }} {{ app_base_path }}/scripts/backup.sh"
       register: backup_result
 
     - name: Show backup output

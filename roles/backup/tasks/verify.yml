@@ -10,14 +10,12 @@
   when: not backup_script.stat.exists
 
 - name: Verify database connectivity
-  command: >
+  shell: |
     {% if db_type == 'postgres' %}
-    psql -h {{ db_host }} -p {{ db_port }} -U {{ db_user }} -d {{ db_name }} -c "SELECT 1"
+    PGPASSFILE="{{ app_base_path }}/.pgpass" psql -h {{ db_host }} -p {{ db_port }} -U {{ db_user }} -d {{ db_name }} -c "SELECT 1"
     {% else %}
-    mysql -h {{ db_host }} -P {{ db_port }} -u {{ db_user }} {{ db_name }} -e "SELECT 1"
+    mysql --defaults-file="{{ app_base_path }}/.my.cnf" {{ db_name }} -e "SELECT 1"
     {% endif %}
-  become: true
-  become_user: "{{ app_user }}"
   changed_when: false
   register: db_check
 

@@ -1,9 +1,14 @@
 ---
-- name: Ensure rclone is installed
-  apt:
-    name: rclone
-    state: present
-    update_cache: true
+- name: Check if rclone is available
+  command: which rclone
+  register: rclone_check
+  changed_when: false
+  failed_when: false
+
+- name: Fail if rclone not installed
+  fail:
+    msg: "rclone not found. Please install rclone manually."
+  when: rclone_check.rc != 0
 
 - name: Add S3 config to rclone.conf
   blockinfile:
@@ -17,6 +22,11 @@
       secret_access_key = {{ vault_s3_secret_key }}
       region = {{ cloud_s3_region }}
     create: true
+    mode: '0600'
+
+- name: Fix rclone config ownership
+  file:
+    path: "{{ app_base_path }}/.config/rclone/rclone.conf"
     owner: "{{ app_user }}"
     group: "{{ app_user }}"
     mode: '0600'
@@ -41,8 +51,6 @@
   command: >
     rclone --config="{{ app_base_path }}/.config/rclone/rclone.conf"
     lsd "s3:{{ cloud_s3_bucket }}/{{ cloud_s3_prefix }}"
-  become: true
-  become_user: "{{ app_user }}"
   changed_when: false
   register: s3_test
   failed_when: false

@@ -7,8 +7,13 @@
     group: "{{ app_user }}"
     mode: '0600'
 
-- name: Ensure mariadb-client is installed
-  apt:
-    name: mariadb-client
-    state: present
-    update_cache: true
+- name: Check if mysqldump is available
+  command: which mysqldump
+  register: mysqldump_check
+  changed_when: false
+  failed_when: false
+
+- name: Fail if mysqldump not installed
+  fail:
+    msg: "mysqldump not found. Please install mariadb-client or mysql-client manually."
+  when: mysqldump_check.rc != 0

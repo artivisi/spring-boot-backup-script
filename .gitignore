@@ -2,6 +2,10 @@
 **/vault.yml
 !**/vault.yml.example
 
+# Host inventory (contains server IPs)
+**/hosts.yml
+!**/hosts.yml.example
+
 # Retry files
 *.retry
 

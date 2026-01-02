@@ -7,8 +7,13 @@
     group: "{{ app_user }}"
     mode: '0600'
 
-- name: Ensure postgresql-client is installed
-  apt:
-    name: postgresql-client
-    state: present
-    update_cache: true
+- name: Check if pg_dump is available
+  command: which pg_dump
+  register: pg_dump_check
+  changed_when: false
+  failed_when: false
+
+- name: Fail if pg_dump not installed
+  fail:
+    msg: "pg_dump not found. Please install postgresql-client manually."
+  when: pg_dump_check.rc != 0

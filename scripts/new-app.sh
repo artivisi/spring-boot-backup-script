@@ -28,21 +28,21 @@ fi
 
 echo "Creating inventory for: ${APP_NAME}"
 
-# Create directory structure
-mkdir -p "${INVENTORY_DIR}/group_vars"
+# Create directory structure (use group_vars/all/ subdirectory for vault support)
+mkdir -p "${INVENTORY_DIR}/group_vars/all"
 
-# Create hosts.yml
+# Create hosts.yml (plain values - vault vars don't work here)
 cat > "${INVENTORY_DIR}/hosts.yml" << 'EOF'
 all:
   hosts:
     prod:
-      ansible_host: "{{ vault_server_ip }}"
-      ansible_user: "{{ vault_server_user }}"
+      ansible_host: # TODO: set server IP
+      ansible_user: # TODO: set SSH user
       ansible_python_interpreter: /usr/bin/python3
 EOF
 
-# Create all.yml
-cat > "${INVENTORY_DIR}/group_vars/all.yml" << EOF
+# Create main.yml (non-secret config)
+cat > "${INVENTORY_DIR}/group_vars/all/main.yml" << EOF
 # Application identity
 app_name: ${APP_NAME}
 app_user: "{{ vault_app_user }}"
@@ -97,15 +97,10 @@ cloud_sync_cron_minute: 0
 notification_telegram_enabled: true
 EOF
 
-# Create vault.yml.example
-cat > "${INVENTORY_DIR}/group_vars/vault.yml.example" << 'EOF'
-# Copy this file to vault.yml and encrypt with ansible-vault
-# cp vault.yml.example vault.yml
+# Create vault.yml template
+cat > "${INVENTORY_DIR}/group_vars/all/vault.yml" << 'EOF'
+# Encrypt this file after editing:
 # ansible-vault encrypt vault.yml
-
-# Server connection
-vault_server_ip: ""
-vault_server_user: ""
 
 # Application
 vault_app_user: ""
@@ -145,12 +140,12 @@ echo ""
 echo "Inventory created: ${INVENTORY_DIR}"
 echo ""
 echo "Next steps:"
-echo "1. Create and configure vault file:"
-echo "   cp ${INVENTORY_DIR}/group_vars/vault.yml.example ${INVENTORY_DIR}/group_vars/vault.yml"
-echo "   # Edit vault.yml with your values"
-echo "   ansible-vault encrypt ${INVENTORY_DIR}/group_vars/vault.yml"
+echo "1. Edit ${INVENTORY_DIR}/hosts.yml - set server IP and SSH user"
 echo ""
-echo "2. Edit ${INVENTORY_DIR}/group_vars/all.yml if needed (enable cloud providers, adjust retention)"
+echo "2. Edit ${INVENTORY_DIR}/group_vars/all/vault.yml with your secrets, then encrypt:"
+echo "   ansible-vault encrypt ${INVENTORY_DIR}/group_vars/all/vault.yml"
 echo ""
-echo "3. Deploy backup system:"
+echo "3. Edit ${INVENTORY_DIR}/group_vars/all/main.yml if needed (enable cloud providers, adjust retention)"
+echo ""
+echo "4. Deploy backup system:"
 echo "   ansible-playbook playbooks/setup.yml -i inventories/${APP_NAME}/ --ask-vault-pass"

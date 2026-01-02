@@ -1,9 +1,14 @@
 ---
-- name: Ensure rclone is installed
-  apt:
-    name: rclone
-    state: present
-    update_cache: true
+- name: Check if rclone is available
+  command: which rclone
+  register: rclone_check
+  changed_when: false
+  failed_when: false
+
+- name: Fail if rclone not installed
+  fail:
+    msg: "rclone not found. Please install rclone manually."
+  when: rclone_check.rc != 0
 
 - name: Deploy rclone config for B2
   template:
@@ -24,6 +29,11 @@
       account = {{ vault_b2_account_id }}
       key = {{ vault_b2_app_key }}
     create: true
+    mode: '0600'
+
+- name: Fix rclone config ownership
+  file:
+    path: "{{ app_base_path }}/.config/rclone/rclone.conf"
     owner: "{{ app_user }}"
     group: "{{ app_user }}"
     mode: '0600'
@@ -48,8 +58,6 @@
   command: >
     rclone --config="{{ app_base_path }}/.config/rclone/rclone.conf"
     lsd "b2:{{ cloud_b2_bucket }}"
-  become: true
-  become_user: "{{ app_user }}"
   changed_when: false
   register: b2_test
   failed_when: false
