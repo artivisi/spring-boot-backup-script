@@ -15,96 +15,60 @@ This project provides a centralized backup management solution for multiple Spri
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           CONTROL MACHINE                                   │
-│                    (Developer/Admin Workstation)                            │
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │ spring-boot-backup-script/                                          │   │
-│  │ ├── inventories/                                                    │   │
-│  │ │   ├── app1/          ─┐                                           │   │
-│  │ │   ├── app2/           ├── Per-app config (host, credentials)      │   │
-│  │ │   └── app3/          ─┘                                           │   │
-│  │ ├── playbooks/         ── Ansible playbooks (setup, backup, report) │   │
-│  │ ├── roles/backup/      ── Backup role (tasks, templates)            │   │
-│  │ └── scripts/           ── Helper scripts (new-app, run-all)         │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                      │                                      │
-│                          ansible-playbook                                   │
-│                                      │                                      │
-└──────────────────────────────────────┼──────────────────────────────────────┘
-                                       │ SSH
-                                       ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           TARGET SERVER                                     │
-│                                                                             │
-│  ┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐      │
-│  │   Spring Boot    │    │    Database      │    │   Documents      │      │
-│  │   Application    │    │  (PostgreSQL/    │    │   /uploads       │      │
-│  │                  │    │   MariaDB)       │    │                  │      │
-│  └──────────────────┘    └────────┬─────────┘    └────────┬─────────┘      │
-│                                   │                       │                 │
-│                                   ▼                       ▼                 │
-│                          ┌─────────────────────────────────┐                │
-│                          │      backup.sh (cron 02:00)     │                │
-│                          │  ┌───────────────────────────┐  │                │
-│                          │  │ 1. pg_dump / mysqldump    │  │                │
-│                          │  │ 2. tar documents          │  │                │
-│                          │  │ 3. Generate manifest.json │  │                │
-│                          │  │ 4. Create .tar.gz archive │  │                │
-│                          │  └───────────────────────────┘  │                │
-│                          └───────────────┬─────────────────┘                │
-│                                          │                                  │
-│                                          ▼                                  │
-│  ┌───────────────────────────────────────────────────────────────────┐     │
-│  │                     LOCAL BACKUP STORAGE                          │     │
-│  │                   /opt/<app>/backup/                              │     │
-│  │                                                                   │     │
-│  │   app_20260101_020000.tar.gz  (unencrypted)                      │     │
-│  │   app_20260102_020000.tar.gz  (unencrypted)                      │     │
-│  │   ... (retention: 7 days default)                                │     │
-│  └───────────────────────────────────────────────────────────────────┘     │
-│                                          │                                  │
-│                                          ▼                                  │
-│                          ┌─────────────────────────────────┐                │
-│                          │   cloud-sync.sh (cron 03:00)    │                │
-│                          │  ┌───────────────────────────┐  │                │
-│                          │  │ 1. GPG encrypt (-c)       │  │                │
-│                          │  │ 2. rclone copy to cloud   │  │                │
-│                          │  │ 3. Cleanup old backups    │  │                │
-│                          │  └───────────────────────────┘  │                │
-│                          └───────────────┬─────────────────┘                │
-│                                          │                                  │
-└──────────────────────────────────────────┼──────────────────────────────────┘
-                                           │ HTTPS (encrypted in transit)
-                     ┌─────────────────────┼─────────────────────┐
-                     │                     │                     │
-                     ▼                     ▼                     ▼
-          ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐
-          │   Backblaze B2   │  │   Google Drive   │  │     AWS S3       │
-          │                  │  │                  │  │                  │
-          │ *.tar.gz.gpg     │  │ *.tar.gz.gpg     │  │ *.tar.gz.gpg     │
-          │ (encrypted)      │  │ (encrypted)      │  │ (encrypted)      │
-          │                  │  │                  │  │                  │
-          │ retention:       │  │ retention:       │  │ retention:       │
-          │ 4 weeks default  │  │ 12 months default│  │ 30 days default  │
-          └──────────────────┘  └──────────────────┘  └──────────────────┘
+```mermaid
+flowchart TB
+    subgraph CONTROL["CONTROL MACHINE (Admin Workstation)"]
+        subgraph REPO["spring-boot-backup-script/"]
+            INV["inventories/<br/>├── app1/<br/>├── app2/<br/>└── app3/"]
+            PLAY["playbooks/<br/>setup, backup, report"]
+            ROLE["roles/backup/<br/>tasks, templates"]
+        end
+        ANSIBLE["ansible-playbook"]
+    end
 
-                         DATA AT REST ENCRYPTION
-          ┌─────────────────────────────────────────────────────┐
-          │                                                     │
-          │  Cloud Storage:  GPG symmetric encryption           │
-          │                  - Algorithm: AES-256               │
-          │                  - Key: Per-app GPG passphrase      │
-          │                  - Stored in: Ansible Vault         │
-          │                                                     │
-          │  Local Storage:  Unencrypted (server filesystem)    │
-          │                  - Protected by: OS file permissions│
-          │                  - Access: app user only (0600)     │
-          │                                                     │
-          └─────────────────────────────────────────────────────┘
+    subgraph SERVER["TARGET SERVER"]
+        subgraph APP_LAYER["Application Layer"]
+            SPRINGBOOT["Spring Boot<br/>Application"]
+            DB[("Database<br/>PostgreSQL/<br/>MariaDB")]
+            DOCS["Documents<br/>/uploads"]
+        end
+
+        subgraph BACKUP_PROCESS["Backup Process"]
+            BACKUP_SH["backup.sh<br/>(cron 02:00)<br/>─────────────<br/>1. pg_dump/mysqldump<br/>2. tar documents<br/>3. manifest.json<br/>4. create .tar.gz"]
+        end
+
+        subgraph LOCAL["LOCAL STORAGE<br/>/opt/app/backup/"]
+            LOCAL_FILES["*.tar.gz<br/>(unencrypted)<br/>retention: 7 days"]
+        end
+
+        subgraph SYNC_PROCESS["Cloud Sync Process"]
+            CLOUD_SH["cloud-sync.sh<br/>(cron 03:00)<br/>─────────────<br/>1. GPG encrypt<br/>2. rclone upload<br/>3. cleanup old"]
+        end
+    end
+
+    subgraph CLOUD["CLOUD STORAGE (GPG Encrypted)"]
+        B2["Backblaze B2<br/>*.tar.gz.gpg<br/>retention: 4 weeks"]
+        GDRIVE["Google Drive<br/>*.tar.gz.gpg<br/>retention: 12 months"]
+        S3["AWS S3<br/>*.tar.gz.gpg<br/>retention: 30 days"]
+    end
+
+    REPO --> ANSIBLE
+    ANSIBLE -->|SSH| SERVER
+    DB --> BACKUP_SH
+    DOCS --> BACKUP_SH
+    BACKUP_SH --> LOCAL_FILES
+    LOCAL_FILES --> CLOUD_SH
+    CLOUD_SH -->|HTTPS| B2
+    CLOUD_SH -->|HTTPS| GDRIVE
+    CLOUD_SH -->|HTTPS| S3
 ```
+
+### Data at Rest Encryption
+
+| Location | Encryption | Details |
+|----------|------------|---------|
+| **Cloud Storage** | GPG symmetric (AES-256) | Per-app passphrase stored in Ansible Vault |
+| **Local Storage** | Unencrypted | Protected by OS file permissions (mode 0600, app user only) |
 
 ## Repository Contents
 
