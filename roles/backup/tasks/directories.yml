@@ -1,0 +1,33 @@
+---
+- name: Create scripts directory
+  file:
+    path: "{{ app_base_path }}/scripts"
+    state: directory
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: '0755'
+
+- name: Create backup directory
+  file:
+    path: "{{ local_backup_path }}"
+    state: directory
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: '0755'
+
+- name: Create log directory
+  file:
+    path: "/var/log/{{ app_name }}"
+    state: directory
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: '0755'
+
+- name: Create rclone config directory
+  file:
+    path: "{{ app_base_path }}/.config/rclone"
+    state: directory
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: '0700'
+  when: cloud_b2_enabled or cloud_gdrive_enabled or cloud_s3_enabled

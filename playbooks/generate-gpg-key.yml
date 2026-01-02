@@ -1,0 +1,52 @@
+---
+- name: Generate GPG key for backup encryption
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_prompt:
+    - name: app_name
+      prompt: "Enter application name"
+      private: false
+
+  tasks:
+    - name: Create temp directory
+      tempfile:
+        state: directory
+        prefix: gpg-
+      register: temp_dir
+
+    - name: Generate random passphrase
+      command: openssl rand -base64 32
+      register: passphrase
+      changed_when: false
+
+    - name: Write passphrase to file
+      copy:
+        content: "{{ passphrase.stdout }}"
+        dest: "{{ temp_dir.path }}/passphrase"
+        mode: '0600'
+
+    - name: Display GPG key
+      debug:
+        msg: |
+
+          ============================================
+          GPG Key Generated for: {{ app_name }}
+          ============================================
+
+          Add the following to your vault.yml:
+
+          vault_gpg_key: |
+            {{ passphrase.stdout }}
+
+          ============================================
+          IMPORTANT: Store this key securely!
+          - Add to Ansible Vault: inventories/{{ app_name }}/group_vars/vault.yml
+          - Backup in Bitwarden or similar password manager
+          ============================================
+
+    - name: Cleanup temp directory
+      file:
+        path: "{{ temp_dir.path }}"
+        state: absent

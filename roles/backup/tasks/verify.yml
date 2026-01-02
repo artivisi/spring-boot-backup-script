@@ -1,0 +1,27 @@
+---
+- name: Verify backup script exists
+  stat:
+    path: "{{ app_base_path }}/scripts/backup.sh"
+  register: backup_script
+
+- name: Fail if backup script missing
+  fail:
+    msg: "Backup script not found at {{ app_base_path }}/scripts/backup.sh"
+  when: not backup_script.stat.exists
+
+- name: Verify database connectivity
+  command: >
+    {% if db_type == 'postgres' %}
+    psql -h {{ db_host }} -p {{ db_port }} -U {{ db_user }} -d {{ db_name }} -c "SELECT 1"
+    {% else %}
+    mysql -h {{ db_host }} -P {{ db_port }} -u {{ db_user }} {{ db_name }} -e "SELECT 1"
+    {% endif %}
+  become: true
+  become_user: "{{ app_user }}"
+  changed_when: false
+  register: db_check
+
+- name: Show database connectivity result
+  debug:
+    msg: "Database connection successful"
+  when: db_check.rc == 0

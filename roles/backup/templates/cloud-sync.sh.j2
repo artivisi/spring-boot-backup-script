@@ -1,0 +1,66 @@
+#!/bin/bash
+set -euo pipefail
+
+# Load configuration
+source "{{ app_base_path }}/backup.conf"
+
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [SYNC] $1"
+}
+
+send_telegram() {
+    local message="$1"
+    if [[ "$TELEGRAM_ENABLED" == "true" ]]; then
+        curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_CHAT_ID}" \
+            -d "text=${message}" \
+            -d "parse_mode=HTML" > /dev/null 2>&1 || true
+    fi
+}
+
+log "Starting cloud sync for ${APP_NAME}"
+
+B2_STATUS="skipped"
+GDRIVE_STATUS="skipped"
+S3_STATUS="skipped"
+
+# Upload to B2
+{% if cloud_b2_enabled %}
+log "Uploading to Backblaze B2..."
+if "{{ app_base_path }}/scripts/upload-b2.sh" | tail -1 | grep -q "success"; then
+    B2_STATUS="✅"
+else
+    B2_STATUS="❌"
+fi
+{% endif %}
+
+# Upload to GDrive
+{% if cloud_gdrive_enabled %}
+log "Uploading to Google Drive..."
+if "{{ app_base_path }}/scripts/upload-gdrive.sh" | tail -1 | grep -q "success"; then
+    GDRIVE_STATUS="✅"
+else
+    GDRIVE_STATUS="❌"
+fi
+{% endif %}
+
+# Upload to S3
+{% if cloud_s3_enabled %}
+log "Uploading to AWS S3..."
+if "{{ app_base_path }}/scripts/upload-s3.sh" | tail -1 | grep -q "success"; then
+    S3_STATUS="✅"
+else
+    S3_STATUS="❌"
+fi
+{% endif %}
+
+log "Cloud sync complete"
+
+# Send summary notification
+SUMMARY="☁️ <b>Cloud Sync: ${APP_NAME}</b>"
+SUMMARY="${SUMMARY}%0A%0AResults:"
+SUMMARY="${SUMMARY}%0A  B2: ${B2_STATUS}"
+SUMMARY="${SUMMARY}%0A  GDrive: ${GDRIVE_STATUS}"
+SUMMARY="${SUMMARY}%0A  S3: ${S3_STATUS}"
+
+send_telegram "$SUMMARY"

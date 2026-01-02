@@ -1,0 +1,97 @@
+---
+- name: Test backup system
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Test database connectivity
+      command: >
+        {% if db_type == 'postgres' %}
+        psql -h {{ db_host }} -p {{ db_port }} -U {{ db_user }} -d {{ db_name }} -c "SELECT 1"
+        {% else %}
+        mysql -h {{ db_host }} -P {{ db_port }} -u {{ db_user }} {{ db_name }} -e "SELECT 1"
+        {% endif %}
+      become: true
+      become_user: "{{ app_user }}"
+      changed_when: false
+      register: db_test
+
+    - name: Show database test result
+      debug:
+        msg: "Database connectivity: {{ 'OK' if db_test.rc == 0 else 'FAILED' }}"
+
+    - name: Test B2 connectivity
+      command: >
+        rclone --config="{{ app_base_path }}/.config/rclone/rclone.conf"
+        lsd "b2:{{ cloud_b2_bucket }}"
+      become: true
+      become_user: "{{ app_user }}"
+      changed_when: false
+      register: b2_test
+      when: cloud_b2_enabled
+      failed_when: false
+
+    - name: Show B2 test result
+      debug:
+        msg: "B2 connectivity: {{ 'OK' if b2_test.rc == 0 else 'FAILED - ' + b2_test.stderr }}"
+      when: cloud_b2_enabled
+
+    - name: Test GDrive connectivity
+      command: >
+        rclone --config="{{ app_base_path }}/.config/rclone/rclone.conf"
+        lsd "gdrive:{{ cloud_gdrive_folder }}"
+      become: true
+      become_user: "{{ app_user }}"
+      changed_when: false
+      register: gdrive_test
+      when: cloud_gdrive_enabled
+      failed_when: false
+
+    - name: Show GDrive test result
+      debug:
+        msg: "GDrive connectivity: {{ 'OK' if gdrive_test.rc == 0 else 'FAILED - ' + gdrive_test.stderr }}"
+      when: cloud_gdrive_enabled
+
+    - name: Test S3 connectivity
+      command: >
+        rclone --config="{{ app_base_path }}/.config/rclone/rclone.conf"
+        lsd "s3:{{ cloud_s3_bucket }}/{{ cloud_s3_prefix }}"
+      become: true
+      become_user: "{{ app_user }}"
+      changed_when: false
+      register: s3_test
+      when: cloud_s3_enabled
+      failed_when: false
+
+    - name: Show S3 test result
+      debug:
+        msg: "S3 connectivity: {{ 'OK' if s3_test.rc == 0 else 'FAILED - ' + s3_test.stderr }}"
+      when: cloud_s3_enabled
+
+    - name: Test Telegram notification
+      uri:
+        url: "https://api.telegram.org/bot{{ vault_telegram_bot_token }}/sendMessage"
+        method: POST
+        body_format: form-urlencoded
+        body:
+          chat_id: "{{ vault_telegram_chat_id }}"
+          text: "🧪 Test notification from {{ app_name }} backup system"
+        status_code: 200
+      when: notification_telegram_enabled
+      register: telegram_test
+      failed_when: false
+
+    - name: Show Telegram test result
+      debug:
+        msg: "Telegram notification: {{ 'OK' if telegram_test.status == 200 else 'FAILED' }}"
+      when: notification_telegram_enabled
+
+    - name: Summary
+      debug:
+        msg: |
+          Backup system test complete for {{ app_name }}
+          Database: {{ 'OK' if db_test.rc == 0 else 'FAILED' }}
+          B2: {{ 'OK' if (cloud_b2_enabled and b2_test.rc == 0) else ('SKIPPED' if not cloud_b2_enabled else 'FAILED') }}
+          GDrive: {{ 'OK' if (cloud_gdrive_enabled and gdrive_test.rc == 0) else ('SKIPPED' if not cloud_gdrive_enabled else 'FAILED') }}
+          S3: {{ 'OK' if (cloud_s3_enabled and s3_test.rc == 0) else ('SKIPPED' if not cloud_s3_enabled else 'FAILED') }}
+          Telegram: {{ 'OK' if (notification_telegram_enabled and telegram_test.status == 200) else ('SKIPPED' if not notification_telegram_enabled else 'FAILED') }}

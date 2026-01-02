@@ -1,0 +1,14 @@
+---
+- name: Create .pgpass file
+  copy:
+    content: "{{ db_host }}:{{ db_port }}:{{ db_name }}:{{ db_user }}:{{ vault_db_password }}"
+    dest: "{{ app_base_path }}/.pgpass"
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: '0600'
+
+- name: Ensure postgresql-client is installed
+  apt:
+    name: postgresql-client
+    state: present
+    update_cache: true

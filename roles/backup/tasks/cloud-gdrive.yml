@@ -1,0 +1,50 @@
+---
+- name: Ensure rclone is installed
+  apt:
+    name: rclone
+    state: present
+    update_cache: true
+
+- name: Add GDrive config to rclone.conf
+  blockinfile:
+    path: "{{ app_base_path }}/.config/rclone/rclone.conf"
+    marker: "# {mark} GDRIVE CONFIG"
+    block: |
+      [gdrive]
+      type = drive
+      scope = drive
+      token = {{ vault_gdrive_token }}
+    create: true
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: '0600'
+
+- name: Deploy GDrive upload script
+  template:
+    src: upload-gdrive.sh.j2
+    dest: "{{ app_base_path }}/scripts/upload-gdrive.sh"
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: '0700'
+
+- name: Deploy cloud sync script
+  template:
+    src: cloud-sync.sh.j2
+    dest: "{{ app_base_path }}/scripts/cloud-sync.sh"
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: '0700'
+
+- name: Test GDrive connectivity
+  command: >
+    rclone --config="{{ app_base_path }}/.config/rclone/rclone.conf"
+    lsd "gdrive:{{ cloud_gdrive_folder }}"
+  become: true
+  become_user: "{{ app_user }}"
+  changed_when: false
+  register: gdrive_test
+  failed_when: false
+
+- name: Show GDrive connectivity result
+  debug:
+    msg: "GDrive connectivity test {{ 'passed' if gdrive_test.rc == 0 else 'failed: ' + gdrive_test.stderr }}"

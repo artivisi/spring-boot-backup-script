@@ -1,0 +1,29 @@
+---
+- name: Restore from backup
+  hosts: all
+  become: true
+
+  vars_prompt:
+    - name: backup_file
+      prompt: "Enter full path to backup file"
+      private: false
+
+  tasks:
+    - name: Validate backup file exists
+      stat:
+        path: "{{ backup_file }}"
+      register: backup_stat
+
+    - name: Fail if backup file not found
+      fail:
+        msg: "Backup file not found: {{ backup_file }}"
+      when: not backup_stat.stat.exists
+
+    - name: Execute restore script
+      command: "{{ app_base_path }}/scripts/restore.sh --force {{ backup_file }}"
+      become: true
+      register: restore_result
+
+    - name: Show restore output
+      debug:
+        var: restore_result.stdout_lines

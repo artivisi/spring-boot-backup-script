@@ -1,0 +1,14 @@
+---
+- name: Create .my.cnf file
+  template:
+    src: my.cnf.j2
+    dest: "{{ app_base_path }}/.my.cnf"
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: '0600'
+
+- name: Ensure mariadb-client is installed
+  apt:
+    name: mariadb-client
+    state: present
+    update_cache: true

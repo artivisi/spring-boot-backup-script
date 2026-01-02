@@ -1,0 +1,52 @@
+# Application identity
+app_name: aplikasi-akunting
+app_user: accounting
+app_base_path: /opt/aplikasi-akunting
+
+# Database configuration
+db_type: postgres  # postgres | mariadb
+db_name: accountingdb
+db_user: accounting
+db_host: localhost
+db_port: 5432
+
+# Backup scope
+backup_documents: true
+backup_documents_path: "{{ app_base_path }}/documents"
+backup_jar: false
+backup_jar_path: "{{ app_base_path }}/app.jar"
+backup_nginx: true
+backup_nginx_path: /etc/nginx/sites-available/aplikasi-akunting
+backup_systemd: true
+backup_systemd_path: /etc/systemd/system/aplikasi-akunting.service
+
+# Local retention
+local_backup_path: "{{ app_base_path }}/backup"
+local_retention_count: 7
+
+# Cloud - Backblaze B2
+cloud_b2_enabled: true
+cloud_b2_bucket: # TODO: set bucket name
+cloud_b2_path: ""
+cloud_b2_retention_weeks: 4
+
+# Cloud - Google Drive
+cloud_gdrive_enabled: false
+cloud_gdrive_folder: ""
+cloud_gdrive_retention_months: 12
+
+# Cloud - AWS S3
+cloud_s3_enabled: false
+cloud_s3_bucket: ""
+cloud_s3_prefix: aplikasi-akunting
+cloud_s3_region: ap-southeast-1
+cloud_s3_retention_days: 30
+
+# Cron schedule
+backup_cron_hour: 2
+backup_cron_minute: 0
+cloud_sync_cron_hour: 3
+cloud_sync_cron_minute: 0
+
+# Notifications
+notification_telegram_enabled: true

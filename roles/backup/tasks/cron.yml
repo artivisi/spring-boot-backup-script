@@ -1,0 +1,17 @@
+---
+- name: Setup daily backup cron job
+  cron:
+    name: "{{ app_name }}-backup"
+    user: "{{ app_user }}"
+    hour: "{{ backup_cron_hour }}"
+    minute: "{{ backup_cron_minute }}"
+    job: "{{ app_base_path }}/scripts/backup.sh >> /var/log/{{ app_name }}/backup.log 2>&1"
+
+- name: Setup cloud sync cron job
+  cron:
+    name: "{{ app_name }}-cloud-sync"
+    user: "{{ app_user }}"
+    hour: "{{ cloud_sync_cron_hour }}"
+    minute: "{{ cloud_sync_cron_minute }}"
+    job: "{{ app_base_path }}/scripts/cloud-sync.sh >> /var/log/{{ app_name }}/backup.log 2>&1"
+  when: cloud_b2_enabled or cloud_gdrive_enabled or cloud_s3_enabled

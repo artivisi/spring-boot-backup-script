@@ -1,0 +1,52 @@
+---
+- name: Ensure rclone is installed
+  apt:
+    name: rclone
+    state: present
+    update_cache: true
+
+- name: Add S3 config to rclone.conf
+  blockinfile:
+    path: "{{ app_base_path }}/.config/rclone/rclone.conf"
+    marker: "# {mark} S3 CONFIG"
+    block: |
+      [s3]
+      type = s3
+      provider = AWS
+      access_key_id = {{ vault_s3_access_key }}
+      secret_access_key = {{ vault_s3_secret_key }}
+      region = {{ cloud_s3_region }}
+    create: true
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: '0600'
+
+- name: Deploy S3 upload script
+  template:
+    src: upload-s3.sh.j2
+    dest: "{{ app_base_path }}/scripts/upload-s3.sh"
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: '0700'
+
+- name: Deploy cloud sync script
+  template:
+    src: cloud-sync.sh.j2
+    dest: "{{ app_base_path }}/scripts/cloud-sync.sh"
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: '0700'
+
+- name: Test S3 connectivity
+  command: >
+    rclone --config="{{ app_base_path }}/.config/rclone/rclone.conf"
+    lsd "s3:{{ cloud_s3_bucket }}/{{ cloud_s3_prefix }}"
+  become: true
+  become_user: "{{ app_user }}"
+  changed_when: false
+  register: s3_test
+  failed_when: false
+
+- name: Show S3 connectivity result
+  debug:
+    msg: "S3 connectivity test {{ 'passed' if s3_test.rc == 0 else 'failed: ' + s3_test.stderr }}"

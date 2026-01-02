@@ -1,0 +1,183 @@
+#!/bin/bash
+set -euo pipefail
+
+# Load configuration
+source "{{ app_base_path }}/backup.conf"
+
+LOG_FILE="/var/log/${APP_NAME}/restore.log"
+
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
+}
+
+send_telegram() {
+    local message="$1"
+    if [[ "$TELEGRAM_ENABLED" == "true" ]]; then
+        curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_CHAT_ID}" \
+            -d "text=${message}" \
+            -d "parse_mode=HTML" > /dev/null 2>&1 || true
+    fi
+}
+
+usage() {
+    echo "Usage: $0 <backup_file>"
+    echo ""
+    echo "Arguments:"
+    echo "  backup_file    Path to the backup archive (.tar.gz)"
+    echo ""
+    echo "Options:"
+    echo "  --force        Skip confirmation prompt"
+    echo "  --help         Show this help message"
+    exit 1
+}
+
+FORCE=false
+BACKUP_FILE=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --force)
+            FORCE=true
+            shift
+            ;;
+        --help)
+            usage
+            ;;
+        *)
+            BACKUP_FILE="$1"
+            shift
+            ;;
+    esac
+done
+
+if [[ -z "$BACKUP_FILE" ]]; then
+    log "ERROR: No backup file specified"
+    usage
+fi
+
+if [[ ! -f "$BACKUP_FILE" ]]; then
+    log "ERROR: Backup file not found: $BACKUP_FILE"
+    exit 1
+fi
+
+TEMP_DIR=$(mktemp -d)
+
+cleanup() {
+    rm -rf "$TEMP_DIR"
+}
+trap cleanup EXIT
+
+log "Starting restore for ${APP_NAME} from ${BACKUP_FILE}"
+
+if [[ "$FORCE" != "true" ]]; then
+    echo "WARNING: This will overwrite existing data!"
+    echo "Press Enter to continue or Ctrl+C to cancel..."
+    read -r
+fi
+
+# Extract archive
+log "Extracting backup archive..."
+tar -xzf "$BACKUP_FILE" -C "$TEMP_DIR"
+
+# Validate manifest
+MANIFEST_FILE="${TEMP_DIR}/manifest.json"
+if [[ ! -f "$MANIFEST_FILE" ]]; then
+    log "ERROR: manifest.json not found in backup archive"
+    send_telegram "❌ <b>Restore Failed: ${APP_NAME}</b>%0AError: Invalid backup archive (no manifest)"
+    exit 1
+fi
+
+log "Validating checksums..."
+
+# Verify database checksum
+DB_DUMP_FILE="${TEMP_DIR}/database.sql"
+if [[ -f "$DB_DUMP_FILE" ]]; then
+    EXPECTED_CHECKSUM=$(grep -o '"database.sql": "[^"]*"' "$MANIFEST_FILE" | cut -d'"' -f4)
+    ACTUAL_CHECKSUM=$(sha256sum "$DB_DUMP_FILE" | cut -d' ' -f1)
+    if [[ "$EXPECTED_CHECKSUM" != "$ACTUAL_CHECKSUM" ]]; then
+        log "ERROR: Database checksum mismatch"
+        send_telegram "❌ <b>Restore Failed: ${APP_NAME}</b>%0AError: Database checksum mismatch"
+        exit 1
+    fi
+    log "Database checksum verified"
+fi
+
+# Stop application service
+log "Stopping application service..."
+systemctl stop "${APP_NAME}" || log "WARNING: Service ${APP_NAME} not running or not found"
+
+# Restore database
+log "Restoring database..."
+if [[ "$DB_TYPE" == "postgres" ]]; then
+    export PGPASSFILE="{{ app_base_path }}/.pgpass"
+
+    # Terminate existing connections
+    psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d postgres -c \
+        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${DB_NAME}' AND pid <> pg_backend_pid();" || true
+
+    # Drop and recreate database
+    psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d postgres -c "DROP DATABASE IF EXISTS ${DB_NAME};"
+    psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d postgres -c "CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};"
+
+    # Restore
+    psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -f "$DB_DUMP_FILE"
+
+elif [[ "$DB_TYPE" == "mariadb" ]]; then
+    mysql --defaults-file="{{ app_base_path }}/.my.cnf" -e "DROP DATABASE IF EXISTS ${DB_NAME}; CREATE DATABASE ${DB_NAME};"
+    mysql --defaults-file="{{ app_base_path }}/.my.cnf" "$DB_NAME" < "$DB_DUMP_FILE"
+fi
+log "Database restore complete"
+
+# Restore documents
+DOCS_TAR="${TEMP_DIR}/documents.tar.gz"
+if [[ -f "$DOCS_TAR" ]]; then
+    log "Restoring documents..."
+
+    # Create safety backup of current documents
+    if [[ -d "$BACKUP_DOCUMENTS_PATH" ]]; then
+        SAFETY_BACKUP="${BACKUP_DOCUMENTS_PATH}.pre-restore.$(date +%Y%m%d_%H%M%S)"
+        mv "$BACKUP_DOCUMENTS_PATH" "$SAFETY_BACKUP"
+        log "Created safety backup: $SAFETY_BACKUP"
+    fi
+
+    # Restore documents
+    mkdir -p "$(dirname "$BACKUP_DOCUMENTS_PATH")"
+    tar -xzf "$DOCS_TAR" -C "$(dirname "$BACKUP_DOCUMENTS_PATH")"
+    chown -R "${APP_USER}:${APP_USER}" "$BACKUP_DOCUMENTS_PATH"
+    log "Documents restore complete"
+fi
+
+# Restore JAR
+JAR_FILE="${TEMP_DIR}/app.jar"
+if [[ -f "$JAR_FILE" ]]; then
+    log "Restoring JAR file..."
+    cp "$JAR_FILE" "$BACKUP_JAR_PATH"
+    chown "${APP_USER}:${APP_USER}" "$BACKUP_JAR_PATH"
+    log "JAR restore complete"
+fi
+
+# Restore nginx config
+NGINX_CONF="${TEMP_DIR}/nginx.conf"
+if [[ -f "$NGINX_CONF" ]]; then
+    log "Restoring nginx config..."
+    cp "$NGINX_CONF" "$BACKUP_NGINX_PATH"
+    nginx -t && systemctl reload nginx
+    log "Nginx config restore complete"
+fi
+
+# Restore systemd service
+SYSTEMD_SERVICE="${TEMP_DIR}/systemd.service"
+if [[ -f "$SYSTEMD_SERVICE" ]]; then
+    log "Restoring systemd service..."
+    cp "$SYSTEMD_SERVICE" "$BACKUP_SYSTEMD_PATH"
+    systemctl daemon-reload
+    log "Systemd service restore complete"
+fi
+
+# Start application service
+log "Starting application service..."
+systemctl start "${APP_NAME}" || log "WARNING: Failed to start service ${APP_NAME}"
+
+log "Restore completed successfully"
+send_telegram "✅ <b>Restore Success: ${APP_NAME}</b>%0ARestored from: $(basename "$BACKUP_FILE")"

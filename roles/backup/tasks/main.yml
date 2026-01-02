@@ -1,0 +1,32 @@
+---
+- name: Create backup directories
+  import_tasks: directories.yml
+
+- name: Setup database credentials
+  import_tasks: postgres.yml
+  when: db_type == 'postgres'
+
+- name: Setup database credentials
+  import_tasks: mariadb.yml
+  when: db_type == 'mariadb'
+
+- name: Deploy backup scripts
+  import_tasks: scripts.yml
+
+- name: Setup Backblaze B2
+  import_tasks: cloud-b2.yml
+  when: cloud_b2_enabled
+
+- name: Setup Google Drive
+  import_tasks: cloud-gdrive.yml
+  when: cloud_gdrive_enabled
+
+- name: Setup AWS S3
+  import_tasks: cloud-s3.yml
+  when: cloud_s3_enabled
+
+- name: Setup cron jobs
+  import_tasks: cron.yml
+
+- name: Verify backup setup
+  import_tasks: verify.yml

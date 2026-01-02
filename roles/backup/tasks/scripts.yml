@@ -1,0 +1,33 @@
+---
+- name: Deploy backup configuration
+  template:
+    src: backup.conf.j2
+    dest: "{{ app_base_path }}/backup.conf"
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: '0600'
+
+- name: Deploy GPG key
+  copy:
+    content: "{{ vault_gpg_key }}"
+    dest: "{{ app_base_path }}/.backup-key"
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: '0600'
+  when: cloud_b2_enabled or cloud_gdrive_enabled or cloud_s3_enabled
+
+- name: Deploy backup script
+  template:
+    src: backup.sh.j2
+    dest: "{{ app_base_path }}/scripts/backup.sh"
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: '0700'
+
+- name: Deploy restore script
+  template:
+    src: restore.sh.j2
+    dest: "{{ app_base_path }}/scripts/restore.sh"
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: '0700'

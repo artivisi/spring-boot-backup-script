@@ -1,0 +1,72 @@
+#!/bin/bash
+set -euo pipefail
+
+# Load configuration
+source "{{ app_base_path }}/backup.conf"
+
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [B2] $1"
+}
+
+send_telegram() {
+    local message="$1"
+    if [[ "$TELEGRAM_ENABLED" == "true" ]]; then
+        curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_CHAT_ID}" \
+            -d "text=${message}" \
+            -d "parse_mode=HTML" > /dev/null 2>&1 || true
+    fi
+}
+
+# Find latest backup
+LATEST_BACKUP=$(ls -1t "${LOCAL_BACKUP_PATH}/${APP_NAME}_"*.tar.gz 2>/dev/null | head -1)
+
+if [[ -z "$LATEST_BACKUP" ]]; then
+    log "ERROR: No backup files found"
+    send_telegram "❌ <b>B2 Upload Failed: ${APP_NAME}</b>%0AError: No backup files found"
+    exit 1
+fi
+
+BACKUP_NAME=$(basename "$LATEST_BACKUP")
+ENCRYPTED_FILE="${LATEST_BACKUP}.gpg"
+
+log "Starting B2 upload for ${BACKUP_NAME}"
+
+# Encrypt backup
+log "Encrypting backup..."
+gpg --batch --yes --symmetric --cipher-algo AES256 \
+    --passphrase-file "$GPG_KEY_PATH" \
+    --output "$ENCRYPTED_FILE" \
+    "$LATEST_BACKUP"
+
+# Upload to B2
+log "Uploading to B2..."
+REMOTE_PATH="b2:${CLOUD_B2_BUCKET}/${CLOUD_B2_PATH}${BACKUP_NAME}.gpg"
+
+if rclone --config="$RCLONE_CONFIG" copy "$ENCRYPTED_FILE" "$(dirname "$REMOTE_PATH")" --progress; then
+    log "Upload successful: ${REMOTE_PATH}"
+
+    # Cleanup encrypted file
+    rm -f "$ENCRYPTED_FILE"
+
+    # Apply retention policy
+    log "Applying retention policy (${CLOUD_B2_RETENTION_WEEKS} weeks)..."
+    CUTOFF_DATE=$(date -d "-${CLOUD_B2_RETENTION_WEEKS} weeks" +%Y%m%d)
+
+    rclone --config="$RCLONE_CONFIG" lsf "b2:${CLOUD_B2_BUCKET}/${CLOUD_B2_PATH}" | while read -r file; do
+        # Extract date from filename (format: appname_YYYYMMDD_HHMMSS.tar.gz.gpg)
+        FILE_DATE=$(echo "$file" | grep -oP '\d{8}' | head -1)
+        if [[ -n "$FILE_DATE" && "$FILE_DATE" < "$CUTOFF_DATE" ]]; then
+            log "Deleting old backup: $file"
+            rclone --config="$RCLONE_CONFIG" delete "b2:${CLOUD_B2_BUCKET}/${CLOUD_B2_PATH}${file}"
+        fi
+    done
+
+    log "B2 upload complete"
+    echo "success"
+else
+    log "ERROR: Upload failed"
+    rm -f "$ENCRYPTED_FILE"
+    send_telegram "❌ <b>B2 Upload Failed: ${APP_NAME}</b>%0AFile: ${BACKUP_NAME}"
+    exit 1
+fi

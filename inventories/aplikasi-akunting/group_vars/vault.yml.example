@@ -1,0 +1,27 @@
+# Copy this file to vault.yml and encrypt with ansible-vault
+# ansible-vault encrypt inventories/aplikasi-akunting/group_vars/vault.yml
+
+# Database password
+vault_db_password: "your-database-password"
+
+# GPG key for backup encryption (generate with playbooks/generate-gpg-key.yml)
+vault_gpg_key: |
+  -----BEGIN PGP PRIVATE KEY BLOCK-----
+  ... paste your key here ...
+  -----END PGP PRIVATE KEY BLOCK-----
+
+# Backblaze B2 credentials (if cloud_b2_enabled)
+vault_b2_account_id: "your-b2-account-id"
+vault_b2_app_key: "your-b2-application-key"
+
+# Google Drive (if cloud_gdrive_enabled)
+# Run: rclone config, then copy token from ~/.config/rclone/rclone.conf
+vault_gdrive_token: '{"access_token":"...","token_type":"Bearer","refresh_token":"...","expiry":"..."}'
+
+# AWS S3 credentials (if cloud_s3_enabled)
+vault_s3_access_key: "AKIA..."
+vault_s3_secret_key: "your-secret-key"
+
+# Telegram notifications
+vault_telegram_bot_token: "123456789:ABC-DEF..."
+vault_telegram_chat_id: "-100123456789"
