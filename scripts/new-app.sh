@@ -36,8 +36,8 @@ cat > "${INVENTORY_DIR}/hosts.yml" << 'EOF'
 all:
   hosts:
     prod:
-      ansible_host: # TODO: set server IP
-      ansible_user: deploy
+      ansible_host: "{{ vault_server_ip }}"
+      ansible_user: "{{ vault_server_user }}"
       ansible_python_interpreter: /usr/bin/python3
 EOF
 
@@ -45,15 +45,15 @@ EOF
 cat > "${INVENTORY_DIR}/group_vars/all.yml" << EOF
 # Application identity
 app_name: ${APP_NAME}
-app_user: ${APP_NAME}
+app_user: "{{ vault_app_user }}"
 app_base_path: /opt/${APP_NAME}
 
 # Database configuration
 db_type: postgres  # postgres | mariadb
-db_name: ${APP_NAME}db
-db_user: ${APP_NAME}
+db_name: "{{ vault_db_name }}"
+db_user: "{{ vault_db_user }}"
 db_host: localhost
-db_port: 5432
+db_port: 5432  # 5432 for postgres, 3306 for mariadb
 
 # Backup scope
 backup_documents: true
@@ -71,18 +71,18 @@ local_retention_count: 7
 
 # Cloud - Backblaze B2
 cloud_b2_enabled: false
-cloud_b2_bucket: ""
-cloud_b2_path: ""
+cloud_b2_bucket: "{{ vault_b2_bucket }}"
+cloud_b2_path: "{{ vault_b2_path }}"
 cloud_b2_retention_weeks: 4
 
 # Cloud - Google Drive
 cloud_gdrive_enabled: false
-cloud_gdrive_folder: ""
+cloud_gdrive_folder: "{{ vault_gdrive_folder }}"
 cloud_gdrive_retention_months: 12
 
 # Cloud - AWS S3
 cloud_s3_enabled: false
-cloud_s3_bucket: ""
+cloud_s3_bucket: "{{ vault_s3_bucket }}"
 cloud_s3_prefix: ${APP_NAME}
 cloud_s3_region: ap-southeast-1
 cloud_s3_retention_days: 30
@@ -100,41 +100,57 @@ EOF
 # Create vault.yml.example
 cat > "${INVENTORY_DIR}/group_vars/vault.yml.example" << 'EOF'
 # Copy this file to vault.yml and encrypt with ansible-vault
+# cp vault.yml.example vault.yml
 # ansible-vault encrypt vault.yml
 
-# Database password
-vault_db_password: "your-database-password"
+# Server connection
+vault_server_ip: ""
+vault_server_user: ""
 
-# GPG key for backup encryption (generate with playbooks/generate-gpg-key.yml)
-vault_gpg_key: |
-  your-gpg-passphrase-here
+# Application
+vault_app_user: ""
 
-# Backblaze B2 credentials (if cloud_b2_enabled)
-vault_b2_account_id: "your-b2-account-id"
-vault_b2_app_key: "your-b2-application-key"
+# Database
+vault_db_name: ""
+vault_db_user: ""
+vault_db_password: ""
+
+# GPG key for backup encryption
+# Generate with: openssl rand -base64 32
+vault_gpg_key: ""
+
+# Backblaze B2 (if cloud_b2_enabled)
+vault_b2_bucket: ""
+vault_b2_path: ""
+vault_b2_account_id: ""
+vault_b2_app_key: ""
 
 # Google Drive (if cloud_gdrive_enabled)
-vault_gdrive_token: '{"access_token":"...","token_type":"Bearer","refresh_token":"...","expiry":"..."}'
+# Run: rclone config (choose Google Drive)
+# Then copy token from ~/.config/rclone/rclone.conf
+vault_gdrive_folder: ""
+vault_gdrive_token: ''
 
-# AWS S3 credentials (if cloud_s3_enabled)
-vault_s3_access_key: "AKIA..."
-vault_s3_secret_key: "your-secret-key"
+# AWS S3 (if cloud_s3_enabled)
+vault_s3_bucket: ""
+vault_s3_access_key: ""
+vault_s3_secret_key: ""
 
 # Telegram notifications
-vault_telegram_bot_token: "123456789:ABC-DEF..."
-vault_telegram_chat_id: "-100123456789"
+vault_telegram_bot_token: ""
+vault_telegram_chat_id: ""
 EOF
 
 echo ""
 echo "Inventory created: ${INVENTORY_DIR}"
 echo ""
 echo "Next steps:"
-echo "1. Edit ${INVENTORY_DIR}/hosts.yml - set server IP"
-echo "2. Edit ${INVENTORY_DIR}/group_vars/all.yml - configure app settings"
-echo "3. Generate GPG key:"
-echo "   ansible-playbook playbooks/generate-gpg-key.yml -e app_name=${APP_NAME}"
-echo "4. Create vault file:"
+echo "1. Create and configure vault file:"
 echo "   cp ${INVENTORY_DIR}/group_vars/vault.yml.example ${INVENTORY_DIR}/group_vars/vault.yml"
+echo "   # Edit vault.yml with your values"
 echo "   ansible-vault encrypt ${INVENTORY_DIR}/group_vars/vault.yml"
-echo "5. Deploy backup system:"
+echo ""
+echo "2. Edit ${INVENTORY_DIR}/group_vars/all.yml if needed (enable cloud providers, adjust retention)"
+echo ""
+echo "3. Deploy backup system:"
 echo "   ansible-playbook playbooks/setup.yml -i inventories/${APP_NAME}/ --ask-vault-pass"

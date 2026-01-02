@@ -1,12 +1,12 @@
 # Application identity
 app_name: aplikasi-akunting
-app_user: accounting
+app_user: "{{ vault_app_user }}"
 app_base_path: /opt/aplikasi-akunting
 
 # Database configuration
-db_type: postgres  # postgres | mariadb
-db_name: accountingdb
-db_user: accounting
+db_type: postgres
+db_name: "{{ vault_db_name }}"
+db_user: "{{ vault_db_user }}"
 db_host: localhost
 db_port: 5432
 
@@ -26,13 +26,13 @@ local_retention_count: 7
 
 # Cloud - Backblaze B2
 cloud_b2_enabled: true
-cloud_b2_bucket: # TODO: set bucket name
-cloud_b2_path: ""
-cloud_b2_retention_weeks: 4
+cloud_b2_bucket: "{{ vault_b2_bucket }}"
+cloud_b2_path: "{{ vault_b2_path }}"
+cloud_b2_retention_weeks: 30
 
 # Cloud - Google Drive
-cloud_gdrive_enabled: false
-cloud_gdrive_folder: ""
+cloud_gdrive_enabled: true
+cloud_gdrive_folder: "{{ vault_gdrive_folder }}"
 cloud_gdrive_retention_months: 12
 
 # Cloud - AWS S3
