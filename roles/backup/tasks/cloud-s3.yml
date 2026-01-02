@@ -22,11 +22,6 @@
       secret_access_key = {{ vault_s3_secret_key }}
       region = {{ cloud_s3_region }}
     create: true
-    mode: '0600'
-
-- name: Fix rclone config ownership
-  file:
-    path: "{{ app_base_path }}/.config/rclone/rclone.conf"
     owner: "{{ app_user }}"
     group: "{{ app_user }}"
     mode: '0600'

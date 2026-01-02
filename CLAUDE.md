@@ -34,6 +34,8 @@ Ansible-based backup solution for Spring Boot applications. Handles database bac
 ├── scripts/
 │   ├── backup.sh
 │   ├── restore.sh
+│   ├── report.sh
+│   ├── cloud-sync.sh
 │   ├── upload-b2.sh
 │   ├── upload-gdrive.sh
 │   └── upload-s3.sh
@@ -41,7 +43,7 @@ Ansible-based backup solution for Spring Boot applications. Handles database bac
 ├── .backup-key          # GPG private key
 ├── .pgpass              # PostgreSQL password file (if postgres)
 ├── .my.cnf              # MySQL/MariaDB credentials (if mariadb)
-└── rclone.conf          # rclone remote configuration
+└── .config/rclone/rclone.conf  # rclone remote configuration
 
 /var/log/{{ app_name }}/
 ├── backup.log
@@ -60,6 +62,23 @@ ansible-playbook playbooks/setup.yml -i inventories/<app>/ --check --diff
 # Test backup connectivity without running actual backup
 ansible-playbook playbooks/test.yml -i inventories/<app>/
 ```
+
+## Multi-App Operations
+
+Use `scripts/run-all.sh` to run any playbook across all configured inventories:
+
+```bash
+# Run backup on all apps
+./scripts/run-all.sh backup --ask-vault-pass
+
+# Generate report for all apps
+./scripts/run-all.sh report --ask-vault-pass
+
+# Deploy setup to all apps
+./scripts/run-all.sh setup --ask-vault-pass
+```
+
+The script discovers inventories by looking for directories in `inventories/` containing a `hosts.yml` file.
 
 ## Adding New Cloud Provider
 

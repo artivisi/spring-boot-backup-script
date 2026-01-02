@@ -1,0 +1,155 @@
+#!/bin/bash
+set -euo pipefail
+
+# Load configuration
+source "{{ app_base_path }}/backup.conf"
+
+# Output format: json for parsing by ansible
+OUTPUT_FORMAT="${1:-text}"
+
+get_local_backups() {
+    local total_size=0
+    local count=0
+    local files=""
+
+    while IFS= read -r file; do
+        if [[ -n "$file" ]]; then
+            local size=$(stat -c%s "$file" 2>/dev/null || stat -f%z "$file" 2>/dev/null)
+            local date=$(stat -c%Y "$file" 2>/dev/null || stat -f%m "$file" 2>/dev/null)
+            local name=$(basename "$file")
+            total_size=$((total_size + size))
+            count=$((count + 1))
+
+            if [[ "$OUTPUT_FORMAT" == "json" ]]; then
+                files="${files}{\"name\":\"${name}\",\"size\":${size},\"date\":${date}},"
+            else
+                local size_mb=$(echo "scale=2; $size / 1048576" | bc)
+                local date_fmt=$(date -d "@$date" '+%Y-%m-%d %H:%M' 2>/dev/null || date -r "$date" '+%Y-%m-%d %H:%M')
+                echo "  ${name}  ${size_mb} MB  ${date_fmt}"
+            fi
+        fi
+    done < <(ls -1t "${LOCAL_BACKUP_PATH}/${APP_NAME}_"*.tar.gz 2>/dev/null)
+
+    if [[ "$OUTPUT_FORMAT" == "json" ]]; then
+        files="${files%,}"
+        echo "{\"count\":${count},\"total_size\":${total_size},\"files\":[${files}]}"
+    else
+        local total_mb=$(echo "scale=2; $total_size / 1048576" | bc)
+        echo ""
+        echo "  Total: ${count} files, ${total_mb} MB"
+    fi
+}
+
+get_cloud_status() {
+    local provider="$1"
+    local remote_path="$2"
+
+    if [[ -z "$remote_path" ]]; then
+        if [[ "$OUTPUT_FORMAT" == "json" ]]; then
+            echo "{\"enabled\":false}"
+        else
+            echo "  ${provider}: disabled"
+        fi
+        return
+    fi
+
+    local file_list
+    file_list=$(rclone --config="$RCLONE_CONFIG" lsf "$remote_path" 2>/dev/null | grep "^${APP_NAME}_" || true)
+
+    local files=0
+    local oldest=""
+    local newest=""
+
+    if [[ -n "$file_list" ]]; then
+        files=$(echo "$file_list" | wc -l | tr -d ' ')
+        oldest=$(echo "$file_list" | sort | head -1)
+        newest=$(echo "$file_list" | sort | tail -1)
+    fi
+
+    if [[ "$OUTPUT_FORMAT" == "json" ]]; then
+        echo "{\"enabled\":true,\"count\":${files},\"oldest\":\"${oldest}\",\"newest\":\"${newest}\"}"
+    else
+        echo "  ${provider}: ${files} files"
+        [[ -n "$oldest" ]] && echo "    Oldest: ${oldest}"
+        [[ -n "$newest" ]] && echo "    Newest: ${newest}"
+    fi
+}
+
+get_last_backup_info() {
+    local latest=$(ls -1t "${LOCAL_BACKUP_PATH}/${APP_NAME}_"*.tar.gz 2>/dev/null | head -1)
+
+    if [[ -z "$latest" ]]; then
+        if [[ "$OUTPUT_FORMAT" == "json" ]]; then
+            echo "{\"exists\":false}"
+        else
+            echo "  No backups found"
+        fi
+        return
+    fi
+
+    local temp_dir=$(mktemp -d)
+    tar -xzf "$latest" -C "$temp_dir" manifest.json 2>/dev/null || true
+
+    if [[ -f "$temp_dir/manifest.json" ]]; then
+        local timestamp=$(grep -o '"timestamp": *"[^"]*"' "$temp_dir/manifest.json" | cut -d'"' -f4)
+        local db_checksum=$(grep -o '"database.sql": *"[^"]*"' "$temp_dir/manifest.json" | cut -d'"' -f4)
+
+        if [[ "$OUTPUT_FORMAT" == "json" ]]; then
+            cat "$temp_dir/manifest.json"
+        else
+            echo "  Timestamp: ${timestamp}"
+            echo "  Database checksum: ${db_checksum:0:16}..."
+        fi
+    fi
+
+    rm -rf "$temp_dir"
+}
+
+get_log_tail() {
+    if [[ -f "$LOG_FILE" ]]; then
+        tail -20 "$LOG_FILE"
+    else
+        echo "  No log file found"
+    fi
+}
+
+# Main report
+if [[ "$OUTPUT_FORMAT" == "json" ]]; then
+    echo "{"
+    echo "\"app_name\":\"${APP_NAME}\","
+    echo "\"generated\":\"$(date -Iseconds)\","
+    echo "\"local_backups\":$(get_local_backups),"
+
+    B2_PATH=""
+    GDRIVE_PATH=""
+    S3_PATH=""
+    [[ "$CLOUD_B2_ENABLED" == "true" ]] && B2_PATH="b2:${CLOUD_B2_BUCKET}/${CLOUD_B2_PATH}"
+    [[ "$CLOUD_GDRIVE_ENABLED" == "true" ]] && GDRIVE_PATH="gdrive:${CLOUD_GDRIVE_FOLDER}"
+    [[ "$CLOUD_S3_ENABLED" == "true" ]] && S3_PATH="s3:${CLOUD_S3_BUCKET}/${CLOUD_S3_PREFIX}"
+
+    echo "\"cloud\":{\"b2\":$(get_cloud_status "B2" "$B2_PATH"),\"gdrive\":$(get_cloud_status "GDrive" "$GDRIVE_PATH"),\"s3\":$(get_cloud_status "S3" "$S3_PATH")},"
+    echo "\"last_backup\":$(get_last_backup_info)"
+    echo "}"
+else
+    echo "============================================"
+    echo "Backup Report: ${APP_NAME}"
+    echo "Generated: $(date '+%Y-%m-%d %H:%M:%S')"
+    echo "============================================"
+    echo ""
+    echo "Local Backups (${LOCAL_BACKUP_PATH}):"
+    get_local_backups
+    echo ""
+    echo "Cloud Status:"
+    [[ "$CLOUD_B2_ENABLED" == "true" ]] && get_cloud_status "B2" "b2:${CLOUD_B2_BUCKET}/${CLOUD_B2_PATH}"
+    [[ "$CLOUD_GDRIVE_ENABLED" == "true" ]] && get_cloud_status "GDrive" "gdrive:${CLOUD_GDRIVE_FOLDER}"
+    [[ "$CLOUD_S3_ENABLED" == "true" ]] && get_cloud_status "S3" "s3:${CLOUD_S3_BUCKET}/${CLOUD_S3_PREFIX}"
+    [[ "$CLOUD_B2_ENABLED" != "true" && "$CLOUD_GDRIVE_ENABLED" != "true" && "$CLOUD_S3_ENABLED" != "true" ]] && echo "  No cloud providers enabled"
+    echo ""
+    echo "Last Backup:"
+    get_last_backup_info
+    echo ""
+    echo "Recent Log Entries:"
+    get_log_tail
+    echo ""
+    echo "============================================"
+fi

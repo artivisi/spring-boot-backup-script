@@ -1,0 +1,13 @@
+---
+- name: Generate backup report
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Execute report script
+      command: "sudo -u {{ app_user }} {{ app_base_path }}/scripts/report.sh"
+      register: report_result
+
+    - name: Show report output
+      debug:
+        var: report_result.stdout_lines

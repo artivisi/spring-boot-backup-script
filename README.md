@@ -34,12 +34,14 @@ spring-boot-backup-script/
 │   ├── setup.yml             # install backup system on server
 │   ├── backup.yml            # trigger immediate backup
 │   ├── restore.yml           # restore from backup file
+│   ├── report.yml            # generate backup status report
 │   ├── test.yml              # verify backup and cloud connectivity
 │   └── generate-gpg-key.yml  # generate GPG key for new app
 ├── roles/
 │   └── backup/
 └── scripts/
-    └── new-app.sh            # scaffold new app inventory
+    ├── new-app.sh            # scaffold new app inventory
+    └── run-all.sh            # run playbook on all inventories
 ```
 
 ## Quick Start
@@ -124,11 +126,36 @@ ansible-playbook playbooks/test.yml -i inventories/myapp/ --ask-vault-pass
 
 ## Usage
 
-### Run immediate backup
+### Single App Operations
 
+Run backup on single app:
 ```bash
 ansible-playbook playbooks/backup.yml -i inventories/myapp/ --ask-vault-pass
 ```
+
+Generate backup report:
+```bash
+ansible-playbook playbooks/report.yml -i inventories/myapp/ --ask-vault-pass
+```
+
+### Multi-App Operations
+
+Run backup on all configured apps:
+```bash
+./scripts/run-all.sh backup --ask-vault-pass
+```
+
+Generate report for all apps:
+```bash
+./scripts/run-all.sh report --ask-vault-pass
+```
+
+Deploy setup to all apps:
+```bash
+./scripts/run-all.sh setup --ask-vault-pass
+```
+
+The `run-all.sh` script discovers all inventories in `inventories/` directory and runs the specified playbook against each one sequentially.
 
 ### Restore from backup
 

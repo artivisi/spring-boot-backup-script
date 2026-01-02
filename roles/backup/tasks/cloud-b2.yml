@@ -29,11 +29,6 @@
       account = {{ vault_b2_account_id }}
       key = {{ vault_b2_app_key }}
     create: true
-    mode: '0600'
-
-- name: Fix rclone config ownership
-  file:
-    path: "{{ app_base_path }}/.config/rclone/rclone.conf"
     owner: "{{ app_user }}"
     group: "{{ app_user }}"
     mode: '0600'

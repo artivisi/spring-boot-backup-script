@@ -31,3 +31,11 @@
     owner: "{{ app_user }}"
     group: "{{ app_user }}"
     mode: '0700'
+
+- name: Deploy report script
+  template:
+    src: report.sh.j2
+    dest: "{{ app_base_path }}/scripts/report.sh"
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: '0700'
